@@ -190,17 +190,40 @@
 
   /* CALENDARIO */
   .cal-head{display:flex;align-items:center;justify-content:space-between;margin-top:14px;}
+  .cal-legend{display:flex;gap:14px;margin-top:8px;flex-wrap:wrap;}
+  .cal-legend .item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted);}
+  .cal-legend .sw{width:10px;height:10px;border-radius:3px;}
   .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-top:12px;}
   .cal-dow{font-size:10.5px;text-align:center;color:var(--text-muted);font-weight:700;padding-bottom:4px;}
   .cal-cell{
-    aspect-ratio:1/0.85;border-radius:10px;background:var(--surface);border:1px solid var(--border);
-    padding:5px;font-size:11px;position:relative;cursor:pointer;
+    min-height:76px;border-radius:10px;background:var(--surface);border:1px solid var(--border);
+    padding:5px 5px 4px;font-size:11px;position:relative;cursor:pointer;
+    display:flex;flex-direction:column;justify-content:space-between;
   }
   .cal-cell.other{opacity:.35;}
   .cal-cell.today{border-color:var(--primary);border-width:2px;}
+  .cal-cell.tint-green{background:var(--success-light);}
+  .cal-cell.tint-amber{background:var(--warn-light);}
+  .cal-cell.tint-red{background:var(--danger-light);}
+  .cal-top-row{display:flex;justify-content:space-between;align-items:flex-start;gap:3px;}
+  .cal-dnum-wrap{display:flex;align-items:center;gap:4px;}
   .cal-cell .dnum{font-weight:700;}
-  .cal-dots{position:absolute;bottom:5px;left:5px;right:5px;display:flex;gap:2px;flex-wrap:wrap;}
-  .cal-dots span{width:6px;height:6px;border-radius:50%;}
+  .cal-alert-dot{
+    width:8px;height:8px;border-radius:50%;background:var(--danger);
+    box-shadow:0 0 0 2px var(--danger-light);flex-shrink:0;
+  }
+  .cal-count-badge{
+    font-size:9.5px;font-weight:700;background:var(--surface);border:1px solid var(--border);
+    border-radius:999px;padding:1px 6px;display:flex;align-items:center;gap:2px;white-space:nowrap;color:var(--text);
+  }
+  .cal-bars{display:flex;flex-direction:column;gap:2px;margin-top:4px;}
+  .cal-bar{height:7px;}
+  .cal-bar.rounded-l{border-top-left-radius:5px;border-bottom-left-radius:5px;}
+  .cal-bar.rounded-r{border-top-right-radius:5px;border-bottom-right-radius:5px;}
+  .cal-bar.green{background:var(--success);}
+  .cal-bar.amber{background:var(--warn);}
+  .cal-bar.red{background:var(--danger);}
+  .cal-more{font-size:9.5px;color:var(--text-muted);font-weight:600;}
   .day-detail{margin-top:14px;}
 
   /* MODAL */
@@ -350,6 +373,13 @@ function daysDiff(iso){
   const a = new Date(todayISO()+'T00:00:00');
   const b = new Date(iso+'T00:00:00');
   return Math.round((b-a)/86400000);
+}
+function tripStatusInfo(c){
+  const pend = Object.values(c.checklist||{}).filter(v=>!v).length;
+  const d = daysDiff(c.dataViagemIda);
+  let color = 'green';
+  if(pend>0) color = (d!==null && d<=2) ? 'red' : 'amber';
+  return { pend, color };
 }
 function newClient(){
   return {
@@ -585,8 +615,8 @@ function openClientModal(id){
       <button class="close-x" onclick="closeModal()">×</button>
     </div>
     <div class="form-grid">
-      <div class="field full"><label>Nome do cliente</label><input id="f_nome" value="${esc(c.nome)}" placeholder="Nome completo"></div>
-      <div class="field"><label>Contato (whatsapp/e-mail)</label><input id="f_contato" value="${esc(c.contato)}"></div>
+      <div class="field full"><label>Nome do cliente</label><input id="f_nome" list="dl_clientes_nome" value="${esc(c.nome)}" placeholder="Nome completo" ${isNew?`oninput="onClientNomeInput(this.value)"`:''}></div>
+      <div class="field"><label>Contato (whatsapp/e-mail)</label><input id="f_contato" list="dl_clientes_contato" value="${esc(c.contato)}" ${isNew?`oninput="onClientContatoInput(this.value)"`:''}></div>
       <div class="field"><label>Status</label>
         <select id="f_status">
           ${STATUS_ORDER.map(s=>`<option value="${s}" ${c.status===s?'selected':''}>${STATUS_LABEL[s]}</option>`).join('')}
@@ -623,6 +653,9 @@ function openClientModal(id){
       </div>
       <div class="field full"><label>Observações</label><textarea id="f_notas">${esc(c.notas)}</textarea></div>
     </div>
+    <datalist id="dl_clientes_nome">${buildClientHistoryOptions().names.map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
+    <datalist id="dl_clientes_contato">${buildClientHistoryOptions().contatos.map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
+    ${isNew ? '<p class="muted" id="clienteRepetidoHint" style="font-size:12px;margin-top:6px;display:none"></p>' : ''}
     <div class="modal-actions">
       ${isNew? '<span></span>' : `<button class="btn danger" onclick="deleteClient('${c.id}')">Excluir</button>`}
       <div style="display:flex;gap:8px">
@@ -683,6 +716,39 @@ function deleteClient(id){
   saveState();
   closeModal();
   render();
+}
+
+/* ---- Histórico de clientes (autocompletar nome/telefone) ---- */
+function buildClientHistoryOptions(){
+  const byNome = {}; const byContato = {};
+  const sorted = [...state.clientes].sort((a,b)=>(a.dataCriacao||'').localeCompare(b.dataCriacao||''));
+  sorted.forEach(c=>{
+    if(c.nome && c.nome.trim()) byNome[c.nome.trim().toLowerCase()] = { nome:c.nome.trim(), contato:c.contato||'' };
+    if(c.contato && c.contato.trim()) byContato[c.contato.trim()] = { nome:c.nome||'', contato:c.contato.trim() };
+  });
+  return {
+    map: byNome, byPhone: byContato,
+    names: Object.values(byNome).map(v=>v.nome),
+    contatos: Object.values(byContato).map(v=>v.contato)
+  };
+}
+function onClientNomeInput(value){
+  const hist = buildClientHistoryOptions();
+  const key = value.trim().toLowerCase();
+  const hint = document.getElementById('clienteRepetidoHint');
+  if(hist.map[key]){
+    const contatoField = document.getElementById('f_contato');
+    if(contatoField && !contatoField.value) contatoField.value = hist.map[key].contato || '';
+    if(hint){ hint.style.display='block'; hint.textContent = '✓ Cliente já cadastrado antes — contato preenchido automaticamente.'; }
+  } else if(hint){ hint.style.display='none'; }
+}
+function onClientContatoInput(value){
+  const hist = buildClientHistoryOptions();
+  const key = value.trim();
+  const nomeField = document.getElementById('f_nome');
+  if(hist.byPhone[key] && nomeField && !nomeField.value){
+    nomeField.value = hist.byPhone[key].nome || '';
+  }
 }
 
 /* ============================================================
@@ -968,6 +1034,33 @@ function renderCalendario(){
       return c.dataViagemIda <= iso && iso <= fim;
     });
   }
+  function renderCalCell(cell){
+    if(!cell.iso){
+      return `<div class="cal-cell other"><div class="cal-top-row"><span class="dnum">${cell.d}</span></div></div>`;
+    }
+    const infos = tripsOnDay(cell.iso).map(t=>Object.assign({c:t}, tripStatusInfo(t)));
+    const hasAlert = infos.some(i=>i.pend>0);
+    const worst = infos.some(i=>i.color==='red') ? 'red' : (infos.some(i=>i.color==='amber') ? 'amber' : (infos.length ? 'green' : ''));
+    const tintClass = worst ? ('tint-'+worst) : '';
+    const shown = infos.slice(0,2);
+    const extra = infos.length - shown.length;
+    const barsHtml = shown.map(i=>{
+      const fim = i.c.dataViagemVolta || i.c.dataViagemIda;
+      const isStart = i.c.dataViagemIda === cell.iso;
+      const isEnd = fim === cell.iso;
+      return `<div class="cal-bar ${i.color}${isStart?' rounded-l':''}${isEnd?' rounded-r':''}"></div>`;
+    }).join('') + (extra>0 ? `<div class="cal-more">+${extra} mais</div>` : '');
+    return `<div class="cal-cell ${cell.other?'other':''} ${cell.iso===hoje?'today':''} ${tintClass}" onclick="selectCalDay('${cell.iso}')">
+      <div class="cal-top-row">
+        <div class="cal-dnum-wrap">
+          <span class="dnum">${cell.d}</span>
+          ${hasAlert?'<span class="cal-alert-dot" title="Tem pendência de assistência"></span>':''}
+        </div>
+        ${infos.length? `<span class="cal-count-badge">✈️ ${infos.length}</span>` : ''}
+      </div>
+      ${infos.length? `<div class="cal-bars">${barsHtml}</div>` : '<div></div>'}
+    </div>`;
+  }
 
   el.innerHTML = `
     <div class="cal-head">
@@ -975,15 +1068,14 @@ function renderCalendario(){
       <h2 style="font-size:15px;color:var(--primary-dark)">${monthNames[month]} de ${year}</h2>
       <button class="btn sm" onclick="calShift(1)">Próximo →</button>
     </div>
+    <div class="cal-legend">
+      <div class="item"><span class="sw" style="background:var(--success)"></span>Tudo confirmado</div>
+      <div class="item"><span class="sw" style="background:var(--warn)"></span>Falta confirmar</div>
+      <div class="item"><span class="sw" style="background:var(--danger)"></span>Urgente (≤2 dias) e pendente</div>
+    </div>
     <div class="cal-grid">
       ${['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].map(d=>`<div class="cal-dow">${d}</div>`).join('')}
-      ${cells.map(c=>{
-        const trips = tripsOnDay(c.iso);
-        return `<div class="cal-cell ${c.other?'other':''} ${c.iso===hoje?'today':''}" onclick="${c.iso? `selectCalDay('${c.iso}')`:''}">
-          <div class="dnum">${c.d}</div>
-          ${trips.length? `<div class="cal-dots">${trips.slice(0,4).map(()=>`<span style="background:var(--success)"></span>`).join('')}</div>`:''}
-        </div>`;
-      }).join('')}
+      ${cells.map(c=>renderCalCell(c)).join('')}
     </div>
     <div class="day-detail" id="dayDetail">
       ${calSelectedDay ? renderDayDetail(calSelectedDay, tripsOnDay(calSelectedDay)) : `<div class="empty-state">Toque em um dia para ver as viagens marcadas.</div>`}
@@ -1004,15 +1096,17 @@ function selectCalDay(iso){
 function renderDayDetail(iso, trips){
   return `
     <div class="section-title"><h2>Viagens em ${fmtData(iso)} <span class="count">${trips.length}</span></h2></div>
-    ${trips.length===0? emptyState('Nenhuma viagem nesse dia.') : trips.map(c=>`
-      <div class="alert-item">
-        <div class="dot green"></div>
+    ${trips.length===0? emptyState('Nenhuma viagem nesse dia.') : trips.map(c=>{
+      const info = tripStatusInfo(c);
+      return `<div class="alert-item">
+        <div class="dot ${info.color}"></div>
         <div class="body">
           <div class="t1">${esc(c.nome)} · ${esc(c.destino||'—')}</div>
-          <div class="t2">${fmtData(c.dataViagemIda)} → ${fmtData(c.dataViagemVolta)}</div>
+          <div class="t2">${fmtData(c.dataViagemIda)} → ${fmtData(c.dataViagemVolta)} ${info.pend>0? `· ${info.pend} pendência(s)`:'· tudo confirmado'}</div>
         </div>
-        <button class="pill green" style="border:none" onclick="openClientModal('${c.id}')">Ver</button>
-      </div>`).join('')}
+        <button class="pill ${info.color}" style="border:none" onclick="openClientModal('${c.id}')">Ver</button>
+      </div>`;
+    }).join('')}
   `;
 }
 
