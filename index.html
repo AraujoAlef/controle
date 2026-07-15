@@ -384,6 +384,7 @@ function tripStatusInfo(c){
 function newClient(){
   return {
     id: uid(),
+    codigoCliente:'',
     nome:'', contato:'', destino:'', operadora:'',
     status:'cotando',
     dataCriacao: todayISO(),
@@ -398,6 +399,14 @@ function newClient(){
 }
 const STATUS_LABEL = { cotando:'Cotando', enviado:'Cotação Enviada', perdido:'Perdido', fechado:'Fechado' };
 const STATUS_ORDER = ['cotando','enviado','perdido','fechado'];
+function suggestNextClientCode(){
+  let max = 0;
+  state.clientes.forEach(c=>{
+    const n = parseInt(String(c.codigoCliente||'').replace(/\D/g,''), 10);
+    if(!isNaN(n) && n > max) max = n;
+  });
+  return String(max + 1).padStart(4,'0');
+}
 
 /* ============================================================
    TABS
@@ -578,7 +587,7 @@ function kanbanCard(c){
     <div class="kcard" draggable="true" ondragstart="event.dataTransfer.setData('text/plain','${c.id}')">
       <div class="top">
         <div>
-          <div class="nome">${esc(c.nome||'Sem nome')}</div>
+          <div class="nome">${c.codigoCliente ? `#${esc(c.codigoCliente)} · `:''}${esc(c.nome||'Sem nome')}</div>
           <div class="dest">${esc(c.destino||'Destino não definido')}</div>
         </div>
         <button class="edit" onclick="event.stopPropagation(); openClientModal('${c.id}')">✏️</button>
@@ -615,7 +624,8 @@ function openClientModal(id){
       <button class="close-x" onclick="closeModal()">×</button>
     </div>
     <div class="form-grid">
-      <div class="field full"><label>Nome do cliente</label><input id="f_nome" list="dl_clientes_nome" value="${esc(c.nome)}" placeholder="Nome completo" ${isNew?`oninput="onClientNomeInput(this.value)"`:''}></div>
+      <div class="field"><label>ID do cliente</label><input id="f_codigo" value="${esc(c.codigoCliente || (isNew ? suggestNextClientCode() : ''))}" placeholder="Ex: 0001"></div>
+      <div class="field"><label>Nome do cliente</label><input id="f_nome" list="dl_clientes_nome" value="${esc(c.nome)}" placeholder="Nome completo" ${isNew?`oninput="onClientNomeInput(this.value)"`:''}></div>
       <div class="field"><label>Contato (whatsapp/e-mail)</label><input id="f_contato" list="dl_clientes_contato" value="${esc(c.contato)}" ${isNew?`oninput="onClientContatoInput(this.value)"`:''}></div>
       <div class="field"><label>Status</label>
         <select id="f_status">
@@ -675,6 +685,7 @@ function saveClientFromForm(id, isNew){
   const newStatus = document.getElementById('f_status').value;
   const data = {
     id, nome,
+    codigoCliente: document.getElementById('f_codigo').value.trim(),
     contato: document.getElementById('f_contato').value.trim(),
     destino: document.getElementById('f_destino').value.trim(),
     operadora: document.getElementById('f_operadora').value.trim(),
@@ -896,10 +907,11 @@ function renderFaturamento(inRange){
     .sort((a,b)=> (b.dataFechamento||'').localeCompare(a.dataFechamento||''));
   if(rows.length===0) return emptyState('Nenhum pacote fechado nesse período.');
   return `<table class="data"><thead><tr>
-    <th>Cliente</th><th>Operadora</th><th>Fechado em</th><th>Valor pacote</th><th>Comissão</th><th>Recebida</th><th>NF emitida</th><th>NF paga</th>
+    <th>ID</th><th>Cliente</th><th>Operadora</th><th>Fechado em</th><th>Valor pacote</th><th>Comissão</th><th>Recebida</th><th>NF emitida</th><th>NF paga</th>
     </tr></thead><tbody>
     ${rows.map(c=>`
       <tr>
+        <td>${esc(c.codigoCliente||'—')}</td>
         <td><a href="#" onclick="openClientModal('${c.id}'); return false;" style="color:var(--primary-dark);font-weight:600;text-decoration:none">${esc(c.nome)}</a></td>
         <td>${esc(c.operadora||'—')}</td>
         <td>${fmtData(c.dataFechamento)}</td>
